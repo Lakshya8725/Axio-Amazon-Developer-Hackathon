@@ -1,9 +1,9 @@
 # Axio Backend API Contract
-**Milestone L1 — Backend Foundation**  
+**Milestone L1 — Backend Foundation**
 **Audience:** Smriti (Frontend Lead) & Lakshya (Backend Lead)  
-**Base URL:** `http://127.0.0.1:8000`  
-**Interactive OpenAPI Docs:** `http://127.0.0.1:8000/docs`  
-**ReDoc Specification:** `http://127.0.0.1:8000/redoc`  
+**Base URL:** `http://127.0.0.1:8000`
+**Interactive OpenAPI Docs:** `http://127.0.0.1:8000/docs`
+**ReDoc Specification:** `http://127.0.0.1:8000/redoc`
 
 ---
 
@@ -66,7 +66,7 @@ interface Task {
 ## 4. REST Endpoints
 
 ### 4.1 System Health
-`GET /health`  
+`GET /health`
 Returns system status, active version, and MCP endpoint discovery.
 
 - **Request:** None
@@ -84,7 +84,7 @@ Returns system status, active version, and MCP endpoint discovery.
 ---
 
 ### 4.2 List Tasks
-`GET /api/tasks`  
+`GET /api/tasks`
 Retrieve a list of tasks with optional filtering and pagination.
 
 - **Query Parameters:**
@@ -123,7 +123,7 @@ Retrieve a list of tasks with optional filtering and pagination.
 ---
 
 ### 4.3 Create Task
-`POST /api/tasks`  
+`POST /api/tasks`
 Creates a new persistent task.
 
 - **Request Headers:** `Content-Type: application/json`
@@ -155,7 +155,7 @@ Creates a new persistent task.
 ---
 
 ### 4.4 Get Task By ID
-`GET /api/tasks/{task_id}`  
+`GET /api/tasks/{task_id}`
 Retrieve a single task by its integer identifier.
 
 - **Response `200 OK`:**
@@ -182,7 +182,7 @@ Retrieve a single task by its integer identifier.
 ---
 
 ### 4.5 Update Task (Partial Patch)
-`PATCH /api/tasks/{task_id}`  
+`PATCH /api/tasks/{task_id}`
 Update one or more mutable fields of an existing task.
 
 - **Request Headers:** `Content-Type: application/json`
@@ -219,7 +219,7 @@ Update one or more mutable fields of an existing task.
 ---
 
 ### 4.6 Delete Task
-`DELETE /api/tasks/{task_id}`  
+`DELETE /api/tasks/{task_id}`
 Permanently remove a task from persistent storage.
 
 - **Response `204 No Content`** (empty body)
@@ -246,6 +246,66 @@ Endpoints for reading and writing operator safety configurations (e.g. `confirm_
   ```
 
 ---
+
+### 4.8 Agent Orchestration
+`POST /api/agent/run`
+
+**Purpose**: Transform a natural‑language instruction into an ordered plan and optionally execute it.
+
+**Supported instruction types**: Currently only the demo phrase "Organize my evening. Prioritize my unfinished tasks and leave time for interview preparation." is recognized. Other instructions return a `400` error.
+
+**Request body** (`AgentRunRequest`):
+```json
+{
+  "instruction": "string (required, non‑empty)",
+  "dry_run": false,
+  "approve": false
+}
+```
+- `dry_run` (default `false`): when `true` the plan is generated and read‑only steps are executed, but any state‑changing actions (`create_task`, `update_task_status`) are skipped.
+- `approve` (default `false`): required to run steps flagged `requires_approval`. If `false`, those steps are reported as `skipped`.
+
+**Response body** (`PlanResponse`):
+```json
+{
+  "request_id": "uuid",
+  "interpreted_intent": "string",
+  "plan": [
+    {
+      "name": "string",
+      "tool": "get_tasks" | "create_task" | "update_task_status" | "get_user_preferences",
+      "arguments": {},
+      "requires_approval": false,
+      "expected_result": "string"
+    }
+  ],
+  "step_results": {
+    "0": {"status": "success"|"failed"|"skipped", "detail": "string", "output": {...}},
+    "1": {"status": "..."}
+  },
+  "final_summary": "string"
+}
+```
+Each step includes its execution `status`. Steps that require approval but are not approved are marked `skipped`. In preview mode all mutation steps are also `skipped`.
+
+**Error responses**:
+- `422 Unprocessable Entity` – validation errors (e.g., empty instruction).
+- `400 Bad Request` – instruction could not be interpreted.
+- `500 Internal Server Error` – unexpected failures inside the service.
+
+**PowerShell example**:
+```powershell
+$payload = @{
+    instruction = "Organize my evening. Prioritize my unfinished tasks and leave time for interview preparation."
+    dry_run    = $true
+    approve    = $false
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/agent/run -Body $payload -ContentType 'application/json'
+```
+Replace `dry_run` with `$false` and `approve` with `$true` to execute the plan.
+
+---
+
 
 ## 5. Error Responses & Format
 

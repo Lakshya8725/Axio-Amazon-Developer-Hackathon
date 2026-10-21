@@ -26,6 +26,8 @@ from app.schemas.preference import (
 )
 from app.services import task_service, preference_service
 from app.tools.mcp_server import mcp_server
+from app.schemas.orchestration import AgentRunRequest, PlanResponse
+from app.services.orchestration_service import run_orchestration
 
 settings = get_settings()
 
@@ -269,6 +271,25 @@ def set_preference(
         description=pref_in.description,
     )
     return UserPreferenceRead.model_validate(pref)
+@app.post(
+    "/api/agent/run",
+    response_model=PlanResponse,
+    tags=["Agent"],
+    summary="Run orchestration agent",
+)
+def run_agent(request: AgentRunRequest, db: Session = Depends(get_db)) -> PlanResponse:
+    """Execute orchestration based on natural language request.
+    Returns a detailed plan and execution results. Errors are mapped to
+    appropriate HTTP responses without exposing internal tracebacks.
+    """
+    try:
+        return run_orchestration(request, db)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Orchestration execution failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 
 if __name__ == "__main__":
