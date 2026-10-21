@@ -163,3 +163,17 @@ def test_service_error_handling(monkeypatch, client: TestClient, db_session):
     response = client.post("/api/agent/run", json=payload)
     assert response.status_code == 500
     assert "Internal server error" in response.json()["detail"]
+def test_duplicate_prevention_on_repeat_approved(client: TestClient, db_session):
+    payload = {
+        "instruction": "Organize my evening. Prioritize my unfinished tasks and leave time for interview preparation.",
+        "dry_run": False,
+        "approve": True,
+    }
+    # First approved request should create the interview preparation task
+    response1 = client.post("/api/agent/run", json=payload)
+    assert response1.status_code == 200
+    # Second approved request should not create a duplicate task
+    response2 = client.post("/api/agent/run", json=payload)
+    assert response2.status_code == 200
+    interview_tasks = db_session.query(task_service.Task).filter(task_service.Task.title == "Interview preparation").all()
+    assert len(interview_tasks) == 1

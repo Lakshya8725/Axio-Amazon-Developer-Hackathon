@@ -192,6 +192,30 @@ def _execute_step(step: PlanStep, db: Session, dry_run: bool, approve: bool) -> 
             return ExecutionResult(status="success", output=result)
         elif step.tool == "create_task":
             args = step.arguments
+            # Guard against duplicate interview‑preparation tasks: if a task with the same title already exists, reuse it.
+            existing = None
+            try:
+                tasks, _ = task_service.list_tasks(
+                    db=db,
+                    status=None,
+                    priority=None,
+                    search=args.get("title", ""),
+                    limit=10,
+                    offset=0,
+                )
+                for t in tasks:
+                    if t.title.strip().lower() == args.get("title", "").strip().lower():
+                        existing = t
+                        break
+            except Exception:
+                existing = None
+            if existing:
+                return ExecutionResult(
+                    status="success",
+                    output={"id": existing.id, "title": existing.title},
+                    detail="Task already exists – reused",
+                )
+            # No existing task – create a new one as before
             task_in = task_service.TaskCreate(
                 title=args["title"],
                 description=args.get("description"),
