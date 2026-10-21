@@ -10,24 +10,24 @@ from sqlalchemy.orm import Session
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
 
-from app.config import get_settings
-from app.database import get_db, init_db
-from app.models.task import TaskPriority, TaskStatus
-from app.schemas.task import (
+from .config import get_settings
+from .database import get_db, init_db
+from .models.task import TaskPriority, TaskStatus
+from .schemas.task import (
     TaskCreate,
     TaskUpdate,
     TaskRead,
     TaskListResponse,
 )
-from app.schemas.preference import (
+from .schemas.preference import (
     UserPreferenceRead,
     UserPreferenceSet,
     UserPreferencesResponse,
 )
-from app.services import task_service, preference_service
-from app.tools.mcp_server import mcp_server
-from app.schemas.orchestration import AgentRunRequest, PlanResponse
-from app.services.orchestration_service import run_orchestration
+from .services import task_service, preference_service
+from .tools.mcp_server import mcp_server
+from .schemas.orchestration import AgentRunRequest, PlanResponse
+from .services.orchestration_service import run_orchestration
 
 settings = get_settings()
 
@@ -294,4 +294,4 @@ def run_agent(request: AgentRunRequest, db: Session = Depends(get_db)) -> PlanRe
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host=settings.host, port=settings.port, reload=True)
+    uvicorn.run("backend.app.main:app", host=settings.host, port=settings.port, reload=True)

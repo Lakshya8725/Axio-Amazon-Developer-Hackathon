@@ -3,7 +3,7 @@
 from typing import Generator
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
-from app.config import get_settings
+from .config import get_settings
 
 settings = get_settings()
 
@@ -43,15 +43,15 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     """Create all tables and seed initial defaults."""
     # Import models so they are registered with Base.metadata
-    from app.models.task import Task  # noqa: F401
-    from app.models.preference import UserPreference  # noqa: F401
+    from .models.task import Task  # noqa: F401
+    from .models.preference import UserPreference  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 
     # Seed default user preferences if none exist
     db = SessionLocal()
     try:
-        from app.services.preference_service import seed_default_preferences
+        from .services.preference_service import seed_default_preferences
         seed_default_preferences(db)
     finally:
         db.close()

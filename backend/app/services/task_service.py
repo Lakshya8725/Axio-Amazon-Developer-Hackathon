@@ -3,8 +3,8 @@
 from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from app.models.task import Task, TaskPriority, TaskStatus
-from app.schemas.task import TaskCreate, TaskUpdate
+from ..models.task import Task, TaskPriority, TaskStatus
+from ..schemas.task import TaskCreate, TaskUpdate
 
 
 def create_task(db: Session, task_in: TaskCreate) -> Task:

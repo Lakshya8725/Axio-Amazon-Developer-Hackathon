@@ -1,6 +1,6 @@
 """SQLAlchemy Models package."""
 
-from app.models.task import Task, TaskPriority, TaskStatus
-from app.models.preference import UserPreference
+from .task import Task, TaskPriority, TaskStatus
+from .preference import UserPreference
 
 __all__ = ["Task", "TaskPriority", "TaskStatus", "UserPreference"]

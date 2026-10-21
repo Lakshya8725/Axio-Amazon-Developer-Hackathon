@@ -16,14 +16,14 @@ from fastapi import HTTPException
 
 from sqlalchemy.orm import Session
 
-from app.schemas.orchestration import (
+from ..schemas.orchestration import (
     AgentRunRequest,
     PlanResponse,
     PlanStep,
     ExecutionResult,
 )
-from app.services import task_service, preference_service
-from app.models.task import TaskPriority, TaskStatus
+from ..services import task_service, preference_service
+from ..models.task import TaskPriority, TaskStatus
 
 # ---------------------------------------------------------------------------
 # Helper utilities

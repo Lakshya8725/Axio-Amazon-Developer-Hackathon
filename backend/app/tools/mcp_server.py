@@ -4,11 +4,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from mcp.server.mcpserver import MCPServer
-from app.config import get_settings
-from app.database import SessionLocal, init_db
-from app.models.task import TaskPriority, TaskStatus
-from app.schemas.task import TaskCreate, TaskUpdate
-from app.services import task_service, preference_service
+from ..config import get_settings
+from ..database import SessionLocal, init_db
+from ..models.task import TaskPriority, TaskStatus
+from ..schemas.task import TaskCreate, TaskUpdate
+from ..services import task_service, preference_service
 
 logger = logging.getLogger("axio.mcp")
 settings = get_settings()

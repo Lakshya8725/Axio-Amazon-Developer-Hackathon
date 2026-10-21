@@ -1,6 +1,6 @@
 """Pydantic Schemas package."""
 
-from app.schemas.task import (
+from .task import (
     TaskBase,
     TaskCreate,
     TaskUpdate,
@@ -8,7 +8,7 @@ from app.schemas.task import (
     TaskRead,
     TaskListResponse,
 )
-from app.schemas.preference import (
+from .preference import (
     UserPreferenceRead,
     UserPreferenceSet,
     UserPreferencesResponse,

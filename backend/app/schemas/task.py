@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from app.models.task import TaskPriority, TaskStatus
+from ..models.task import TaskPriority, TaskStatus
 
 
 class TaskBase(BaseModel):

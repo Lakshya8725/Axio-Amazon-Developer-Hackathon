@@ -2,7 +2,7 @@
 
 from typing import Optional, Dict
 from sqlalchemy.orm import Session
-from app.models.preference import UserPreference
+from ..models.preference import UserPreference
 
 DEFAULT_PREFERENCES = [
     {

@@ -3,7 +3,7 @@
 import enum
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Text, DateTime, func
-from app.database import Base
+from ..database import Base
 
 
 class TaskPriority(str, enum.Enum):
