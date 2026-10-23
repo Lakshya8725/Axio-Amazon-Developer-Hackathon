@@ -6,6 +6,49 @@ Axio is a premium AI personal operator built for the **Amazon AppDev 2026 Hackat
 
 Unlike typical chatbots that merely generate conversational text, Axio transforms natural-language requests into verifiable actions. It maintains persistent task state and user preferences in SQLite, exposes verified tools over the official **Model Context Protocol (MCP)** using modern Streamable HTTP transport, and enforces human-in-the-loop approvals before consequential changes.
 
+The current agent is deterministic. It recognizes one demo instruction and does not call a live language model:
+
+> Organize my evening. Prioritize my unfinished tasks and leave time for interview preparation.
+
+---
+
+## Run the demo
+
+Axio runs as two local processes.
+
+**Backend** — from the repository root, with Python 3.11:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+**Operator UI** — in a second terminal:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Open the operator at [http://127.0.0.1:3000](http://127.0.0.1:3000).
+
+[http://127.0.0.1:8000](http://127.0.0.1:8000) is the API home. A browser shows the service page. An API client receives the same discovery data as JSON. Health stays at `/health`.
+
+Preview is read-only. The interview-preparation task is created only after you check the confirmation and choose **Approve and execute**. Running that approved plan again does not create a duplicate.
+
+If the task ledger is empty, choose **Load evening sample** in the UI, or from the repository root run:
+
+```bash
+python scripts/seed_demo.py
+```
+
+The sample does not insert the interview task. That remains an approved agent action.
+
+The UI calls `/axio-api`, and Next.js proxies that to `http://127.0.0.1:8000`. Override the proxy with `API_PROXY_TARGET`, or set `NEXT_PUBLIC_API_BASE_URL` if the browser should call FastAPI directly. `frontend/` is a minimal static fallback on the same API; serve it separately if you need it. The product UI is `web/`.
+
 ---
 
 ## Architecture Overview
@@ -47,8 +90,13 @@ axio-ai-operator/
 ├── .env.example              # Environment variables template
 ├── .gitignore                # Git ignore patterns
 ├── README.md                 # Project documentation
+├── API_CONTRACT.md           # REST and agent contract
 ├── requirements.txt          # Root Python dependencies
-├── backend/
+├── pytest.ini                # Makes `pytest` import the backend package
+├── web/                      # Next.js operator UI
+├── frontend/                 # Minimal static fallback
+├── scripts/                  # MCP verification and demo seed
+└── backend/
 │   ├── .env.example          # Backend-specific environment template
 │   ├── requirements.txt      # Backend dependency manifest
 │   ├── app/
@@ -63,11 +111,13 @@ axio-ai-operator/
 │   │   ├── schemas/          # Pydantic v2 schemas
 │   │   │   ├── __init__.py
 │   │   │   ├── task.py       # Task validation & response schemas
-│   │   │   └── preference.py # Preference schemas
+│   │   │   ├── preference.py # Preference schemas
+│   │   │   └── orchestration.py # Agent plan request and response
 │   │   ├── services/         # Business logic layer
 │   │   │   ├── __init__.py
 │   │   │   ├── task_service.py
-│   │   │   └── preference_service.py
+│   │   │   ├── preference_service.py
+│   │   │   └── orchestration_service.py # Deterministic evening plan
 │   │   └── tools/            # MCP tool definitions & server
 │   │       ├── __init__.py
 │   │       └── mcp_server.py # Axio MCPServer with registered tools
@@ -76,9 +126,8 @@ axio-ai-operator/
 │       ├── conftest.py       # Isolated SQLite test fixtures & TestClient
 │       ├── test_health.py    # Health check & service discovery tests
 │       ├── test_tasks.py     # Task CRUD, filters, validation, & persistence tests
-│       └── test_mcp.py       # MCP registration, direct calls, & live HTTP tests
-└── scripts/
-    └── verify_mcp_client.py  # End-to-end live MCP client verification script
+│       ├── test_mcp.py       # MCP registration, direct calls, & live HTTP tests
+│       └── test_orchestration.py # Plan preview, approval, ordering, duplicates
 ```
 
 ---
@@ -152,7 +201,7 @@ Run the automated test suite with pytest:
 python -m pytest backend/tests -v
 ```
 
-All 17 tests run in isolation against a clean temporary SQLite database:
+The suite currently runs 31 tests in isolation against a clean temporary SQLite database, including orchestration, approval gating, duplicate prevention, and evening-order sorting. The original foundation coverage is:
 - `backend/tests/test_health.py`:
   - `test_health_check` (PASS)
 - `backend/tests/test_mcp.py`:
@@ -210,6 +259,7 @@ python scripts/verify_mcp_client.py --url http://127.0.0.1:8000/mcp
 
 | Method | Path | Description |
 |---|---|---|
+| `GET` | `/` | Service home. HTML for browsers, JSON for API clients |
 | `GET` | `/health` | Service health status and metadata |
 | `GET` | `/api/tasks` | List tasks with filters (`status`, `priority`, `search`, `limit`, `offset`) |
 | `POST` | `/api/tasks` | Create a new action task |
@@ -218,6 +268,7 @@ python scripts/verify_mcp_client.py --url http://127.0.0.1:8000/mcp
 | `DELETE` | `/api/tasks/{task_id}` | Remove task from persistence |
 | `GET` | `/api/preferences` | Retrieve stored operator preferences |
 | `PUT` | `/api/preferences/{key}` | Set or update a preference key-value pair |
+| `POST` | `/api/agent/run` | Preview or execute the deterministic evening plan |
 
 ### MCP Tools (Streamable HTTP `/mcp`)
 

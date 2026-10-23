@@ -19,8 +19,8 @@ Axio is a proactive AI personal operator ("Your intent. In action."). The backen
 
 ## 2. CORS Configuration
 
-The FastAPI backend is configured with permissive development CORS middleware:
-- **Allowed Origins:** `*` (specifically supporting `http://localhost:3000` and `http://127.0.0.1:3000` for Next.js)
+The FastAPI backend allows local development origins and keeps credentialed requests valid:
+- **Allowed Origins:** `http://127.0.0.1:3000`, `http://localhost:3000`, `http://127.0.0.1:8080`, `http://localhost:8080`, plus any `http` or `https` localhost / `127.0.0.1` port
 - **Allowed Methods:** `GET`, `POST`, `PATCH`, `PUT`, `DELETE`, `OPTIONS`
 - **Allowed Headers:** `*`
 - **Allow Credentials:** `true`
@@ -65,7 +65,32 @@ interface Task {
 
 ## 4. REST Endpoints
 
-### 4.1 System Health
+### 4.1 Service index
+`GET /`
+
+The API root is a real route.
+
+- **Browser request** (`Accept: text/html`): an HTML service page with a link to the operator at `http://127.0.0.1:3000`, plus health and docs.
+- **Other clients:** JSON discovery document.
+
+```json
+{
+  "app": "Axio",
+  "tagline": "Your intent. In action.",
+  "status": "online",
+  "version": "0.1.0",
+  "environment": "development",
+  "operator_ui": "http://127.0.0.1:3000",
+  "health": "/health",
+  "docs": "/docs",
+  "openapi": "/openapi.json",
+  "mcp_endpoint": "/mcp",
+  "agent": "/api/agent/run",
+  "tasks": "/api/tasks"
+}
+```
+
+### 4.2 System Health
 `GET /health`
 Returns system status, active version, and MCP endpoint discovery.
 
@@ -83,7 +108,7 @@ Returns system status, active version, and MCP endpoint discovery.
 
 ---
 
-### 4.2 List Tasks
+### 4.3 List Tasks
 `GET /api/tasks`
 Retrieve a list of tasks with optional filtering and pagination.
 
@@ -122,7 +147,7 @@ Retrieve a list of tasks with optional filtering and pagination.
 
 ---
 
-### 4.3 Create Task
+### 4.4 Create Task
 `POST /api/tasks`
 Creates a new persistent task.
 
@@ -154,7 +179,7 @@ Creates a new persistent task.
 
 ---
 
-### 4.4 Get Task By ID
+### 4.5 Get Task By ID
 `GET /api/tasks/{task_id}`
 Retrieve a single task by its integer identifier.
 
@@ -181,7 +206,7 @@ Retrieve a single task by its integer identifier.
 
 ---
 
-### 4.5 Update Task (Partial Patch)
+### 4.6 Update Task (Partial Patch)
 `PATCH /api/tasks/{task_id}`
 Update one or more mutable fields of an existing task.
 
@@ -218,7 +243,7 @@ Update one or more mutable fields of an existing task.
 
 ---
 
-### 4.6 Delete Task
+### 4.7 Delete Task
 `DELETE /api/tasks/{task_id}`
 Permanently remove a task from persistent storage.
 
@@ -232,7 +257,7 @@ Permanently remove a task from persistent storage.
 
 ---
 
-### 4.7 User Preferences API
+### 4.8 User Preferences API
 Endpoints for reading and writing operator safety configurations (e.g. `confirm_consequential_actions`).
 
 - `GET /api/preferences` (optional `?category=security`)
@@ -247,7 +272,7 @@ Endpoints for reading and writing operator safety configurations (e.g. `confirm_
 
 ---
 
-### 4.8 Agent Orchestration
+### 4.9 Agent Orchestration
 `POST /api/agent/run`
 
 **Purpose**: Transform a natural‑language instruction into an ordered plan and optionally execute it.
@@ -287,6 +312,27 @@ Endpoints for reading and writing operator safety configurations (e.g. `confirm_
 }
 ```
 Each step includes its execution `status`. Steps that require approval but are not approved are marked `skipped`. In preview mode all mutation steps are also `skipped`.
+
+The read step returns unfinished tasks only (`pending` and `in_progress`). The "Propose ordered task list" step is also read-only. Its `output` is the evening order:
+
+```json
+{
+  "ordered": true,
+  "total": 1,
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Confirm recruiter callback",
+      "description": "Lock the conversation before the evening block.",
+      "priority": "urgent",
+      "status": "pending",
+      "due_date": "2026-10-23T18:00:00Z"
+    }
+  ]
+}
+```
+
+Sort order is priority (urgent, high, medium, low), then earliest due date. Tasks without a due date come after dated tasks of the same priority. Completed and cancelled tasks are excluded. Preview does not create the interview-preparation task. A later approved run reuses that task instead of inserting a duplicate. If a non-preview run skips steps because `approve` is false, `final_summary` says those steps were skipped.
 
 **Error responses**:
 - `422 Unprocessable Entity` – validation errors (e.g., empty instruction).
@@ -357,4 +403,4 @@ python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --
 ```powershell
 python -m pytest backend/tests -v
 ```
-All 17 tests execute in isolation using an in-memory/temporary SQLite database.
+The pytest suite executes in isolation using a temporary SQLite database. From the repository root: `python -m pytest`.

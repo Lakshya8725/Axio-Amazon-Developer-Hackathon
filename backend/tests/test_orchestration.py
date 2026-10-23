@@ -177,3 +177,73 @@ def test_duplicate_prevention_on_repeat_approved(client: TestClient, db_session)
     assert response2.status_code == 200
     interview_tasks = db_session.query(task_service.Task).filter(task_service.Task.title == "Interview preparation").all()
     assert len(interview_tasks) == 1
+
+
+def test_sort_tasks_normalizes_mixed_timezones():
+    soon = datetime.now(timezone.utc) + timedelta(hours=2)
+    later = (datetime.now(timezone.utc) + timedelta(days=2)).replace(tzinfo=None)
+    ordered = orch_service._sort_tasks(
+        [
+            {"title": "undated", "priority": "high", "due_date": None},
+            {"title": "later", "priority": "high", "due_date": later},
+            {"title": "sooner", "priority": "high", "due_date": soon},
+        ]
+    )
+    assert [task["title"] for task in ordered] == ["sooner", "later", "undated"]
+
+
+def test_preview_returns_priority_ordered_unfinished_tasks(client: TestClient, db_session):
+    now = datetime.now(timezone.utc)
+    _create_task(db_session, "Alpha urgent", priority="urgent", due_date=(now + timedelta(days=2)).isoformat())
+    _create_task(db_session, "Beta low", priority="low", due_date=(now + timedelta(hours=1)).isoformat())
+    done = _create_task(
+        db_session,
+        "Already finished",
+        priority="urgent",
+        due_date=(now + timedelta(hours=1)).isoformat(),
+    )
+    task_service.update_task_status(db_session, done.id, "completed")
+
+    response = client.post(
+        "/api/agent/run",
+        json={
+            "instruction": "Organize my evening. Prioritize my unfinished tasks and leave time for interview preparation.",
+            "dry_run": True,
+            "approve": False,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    read_titles = [task["title"] for task in data["step_results"]["0"]["output"]["tasks"]]
+    propose = data["step_results"]["1"]
+    titles = [task["title"] for task in propose["output"]["tasks"]]
+
+    assert propose["status"] == "success"
+    assert propose["output"]["ordered"] is True
+    assert titles[0] == "Alpha urgent"
+    assert titles.index("Alpha urgent") < titles.index("Beta low")
+    assert "Already finished" not in titles
+    assert "Already finished" not in read_titles
+    assert "Interview preparation" not in titles
+    assert db_session.query(task_service.Task).count() == 3
+
+
+def test_unapproved_execution_skips_mutation(client: TestClient, db_session):
+    response = client.post(
+        "/api/agent/run",
+        json={
+            "instruction": "Organize my evening. Prioritize my unfinished tasks and leave time for interview preparation.",
+            "dry_run": False,
+            "approve": False,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["step_results"]["2"]["status"] == "skipped"
+    assert "approval" in data["final_summary"].lower()
+    interview = (
+        db_session.query(task_service.Task)
+        .filter(task_service.Task.title == "Interview preparation")
+        .first()
+    )
+    assert interview is None

@@ -1,8 +1,8 @@
 """Task Pydantic validation schemas."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 from ..models.task import TaskPriority, TaskStatus
 
 
@@ -68,6 +68,17 @@ class TaskRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("due_date", "created_at", "updated_at")
+    def serialize_timestamp(self, value: datetime | None) -> str | None:
+        """Emit UTC timestamps with a Z suffix, including naive SQLite values."""
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return value.isoformat().replace("+00:00", "Z")
 
 
 class TaskListResponse(BaseModel):

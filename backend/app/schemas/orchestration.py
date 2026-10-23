@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Literal, Dict
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Request schema
@@ -28,7 +28,8 @@ class AgentRunRequest(BaseModel):
     dry_run: bool = Field(False, description="Preview only, do not perform actions")
     approve: bool = Field(False, description="Approve consequential actions when previewing")
 
-    @validator("instruction")
+    @field_validator("instruction")
+    @classmethod
     def non_empty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("instruction must not be empty")

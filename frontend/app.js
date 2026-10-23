@@ -1,5 +1,5 @@
 // app.js – Axio demo UI logic (vanilla JS)
-const BASE_URL = "http://127.0.0.1:8002";
+const BASE_URL = "http://127.0.0.1:8000";
 
 // DOM elements
 const healthEl = document.getElementById("health");
@@ -19,7 +19,7 @@ function setLoading(on) {
 /** Utility: display error message */
 function showError(msg) {
   errorEl.textContent = msg;
-  errorEl.classList.remove("hidden");
+  errorEl.classList.toggle("hidden", !msg);
 }
 /** Reset plan UI */
 function resetPlanUI() {
@@ -60,6 +60,14 @@ async function checkHealth() {
   }
 }
 checkHealth();
+instructionEl.addEventListener("input", () => {
+  if (
+    window._lastPreviewInstruction &&
+    instructionEl.value.trim() !== window._lastPreviewInstruction
+  ) {
+    executeBtn.disabled = true;
+  }
+});
 /** Preview (dry‑run) */
 previewBtn.addEventListener("click", async () => {
   // disable both buttons while request is in flight
@@ -92,6 +100,7 @@ previewBtn.addEventListener("click", async () => {
     executeBtn.disabled = !needsApproval;
     // Store the last preview response for later confirmation display
     window._lastPreview = resp;
+    window._lastPreviewInstruction = payload.instruction;
   } catch (e) {
     showError(e.message);
   } finally {
@@ -115,7 +124,7 @@ executeBtn.addEventListener("click", async () => {
   setLoading(true);
   showError("");
   const payload = {
-    instruction: instructionEl.value.trim(),
+    instruction: window._lastPreviewInstruction,
     dry_run: false,
     approve: true,
   };

@@ -39,6 +39,12 @@ main {
   max-width: 800px;
   margin: 0 auto;
 }
+.note {
+  font-size: 0.9rem;
+  opacity: 0.8;
+  margin-top: 0;
+}
+.note a { color: #8fd4ff; }
 .instruction-section textarea {
   width: 100%;
   font-family: inherit;

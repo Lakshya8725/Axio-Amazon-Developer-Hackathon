@@ -1,11 +1,13 @@
 """Axio FastAPI Application entrypoint with integrated MCP Streamable HTTP server."""
 
+import html
 import logging
 from contextlib import asynccontextmanager
 from typing import Optional, Dict, Any
 
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+from fastapi import FastAPI, Depends, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
@@ -89,10 +91,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware for local frontend dev
+# Local operator UIs (Next.js on :3000 and the static fallback on :8080).
+# A wildcard origin cannot be combined with credentialed requests.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        "http://127.0.0.1:8080",
+        "http://localhost:8080",
+    ],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -102,7 +111,128 @@ app.add_middleware(
 app.mount("/mcp", mcp_dynamic_app)
 
 
+def service_index_payload() -> Dict[str, Any]:
+    """Public discovery document for the API root."""
+    return {
+        "app": settings.app_name,
+        "tagline": "Your intent. In action.",
+        "status": "online",
+        "version": "0.1.0",
+        "environment": settings.environment,
+        "operator_ui": "http://127.0.0.1:3000",
+        "health": "/health",
+        "docs": "/docs",
+        "openapi": "/openapi.json",
+        "mcp_endpoint": "/mcp",
+        "agent": "/api/agent/run",
+        "tasks": "/api/tasks",
+    }
+
+
+def _service_home_html(payload: Dict[str, Any]) -> str:
+    """Browser page for the API root. API clients still receive JSON."""
+    app_name = html.escape(str(payload["app"]))
+    version = html.escape(str(payload["version"]))
+    environment = html.escape(str(payload["environment"]))
+    operator = html.escape(str(payload["operator_ui"]))
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{app_name} — API</title>
+  <style>
+    :root {{ color-scheme: dark; }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+      color: #f4f7fb;
+      background:
+        radial-gradient(720px 360px at 0% 0%, rgba(126, 231, 255, 0.16), transparent 55%),
+        radial-gradient(540px 320px at 100% 0%, rgba(183, 166, 255, 0.12), transparent 50%),
+        #07080c;
+    }}
+    main {{
+      width: min(720px, 100%);
+      margin: 0 auto;
+      padding: 48px 24px 72px;
+    }}
+    .eyebrow {{
+      margin: 0;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      font-size: 12px;
+      color: #7ee7ff;
+    }}
+    h1 {{
+      margin: 16px 0 0;
+      font-size: 64px;
+      font-weight: 520;
+      letter-spacing: -0.04em;
+    }}
+    .tag {{ margin: 8px 0 0; font-size: 20px; color: #93a0b4; }}
+    .lead {{ max-width: 36rem; margin: 28px 0 0; line-height: 1.6; color: #d5deea; }}
+    .cta {{
+      display: inline-block;
+      margin-top: 28px;
+      padding: 12px 18px;
+      border-radius: 999px;
+      background: #7ee7ff;
+      color: #071016;
+      font-weight: 650;
+      text-decoration: none;
+    }}
+    ul {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 28px 0 0;
+      padding: 0;
+      list-style: none;
+    }}
+    li a {{
+      display: inline-block;
+      padding: 8px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      color: #f4f7fb;
+      text-decoration: none;
+    }}
+    .meta {{ margin-top: 36px; font-family: ui-monospace, monospace; font-size: 12px; color: #6d7b90; }}
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Amazon AppDev · Alexa+</p>
+    <h1>{app_name}</h1>
+    <p class="tag">Your intent. In action.</p>
+    <p class="lead">This address is the Axio API, and it is online. Open the operator to preview a plan, approve the write, and read the verified result.</p>
+    <a class="cta" href="{operator}">Open the operator</a>
+    <ul>
+      <li><a href="/health">Health</a></li>
+      <li><a href="/docs">API docs</a></li>
+      <li><a href="/redoc">ReDoc</a></li>
+    </ul>
+    <p class="meta">{app_name} {version} · {environment} · MCP /mcp · agent POST /api/agent/run</p>
+  </main>
+</body>
+</html>"""
+
+
 # --- Health & Inspection Routes ---
+
+@app.get("/", tags=["System"], summary="Service index", response_model=None)
+def service_index(request: Request):
+    """Browser visitors get a service page. Other clients get the discovery JSON."""
+    payload = service_index_payload()
+    if "text/html" in request.headers.get("accept", ""):
+        return HTMLResponse(_service_home_html(payload))
+    return payload
+
 
 @app.get("/health", tags=["System"])
 def get_health() -> Dict[str, Any]:
@@ -271,6 +401,8 @@ def set_preference(
         description=pref_in.description,
     )
     return UserPreferenceRead.model_validate(pref)
+
+
 @app.post(
     "/api/agent/run",
     response_model=PlanResponse,

@@ -9,7 +9,7 @@ It supports the demo use‑case described in the milestone:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 from fastapi import HTTPException
@@ -72,6 +72,7 @@ def _retrieve_incomplete_tasks(db: Session) -> List[Dict[str, Any]]:
         {
             "id": t.id,
             "title": t.title,
+            "description": t.description,
             "priority": t.priority,
             "due_date": t.due_date,
             "status": t.status,
@@ -80,10 +81,25 @@ def _retrieve_incomplete_tasks(db: Session) -> List[Dict[str, Any]]:
     ]
 
 
-def _priority_score(priority: str) -> int:
+def _priority_score(priority: Any) -> int:
     # Higher number = higher priority for sorting descending
+    if isinstance(priority, TaskPriority):
+        priority = priority.value
     mapping = {"urgent": 4, "high": 3, "medium": 2, "low": 1}
-    return mapping.get(priority.lower(), 0)
+    return mapping.get(str(priority or "").lower(), 0)
+
+
+def _due_sort_value(value: Any) -> datetime:
+    """Normalize due dates so aware and naive timestamps can be compared.
+
+    SQLite often returns naive datetimes. ``datetime.max`` is also naive,
+    and mixing the two raises TypeError. Missing dates sort last.
+    """
+    if not isinstance(value, datetime):
+        return datetime.max.replace(tzinfo=timezone.utc)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _sort_tasks(tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -91,10 +107,30 @@ def _sort_tasks(tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     Tasks without due_date are placed after those with a date.
     """
     def sort_key(t: Dict[str, Any]):
-        pr = _priority_score(t["priority"]) * -1  # negative for descending
-        due = t["due_date"] or datetime.max
-        return (pr, due)
+        pr = _priority_score(t.get("priority")) * -1  # negative for descending
+        return (pr, _due_sort_value(t.get("due_date")))
     return sorted(tasks, key=sort_key)
+
+
+def _serialize_task(task: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a JSON-safe task snapshot for plan step output."""
+    due = task.get("due_date")
+    if isinstance(due, datetime):
+        due = _due_sort_value(due).isoformat().replace("+00:00", "Z")
+    priority = task.get("priority")
+    if isinstance(priority, TaskPriority):
+        priority = priority.value
+    status = task.get("status")
+    if isinstance(status, TaskStatus):
+        status = status.value
+    return {
+        "id": task.get("id"),
+        "title": task.get("title"),
+        "description": task.get("description"),
+        "priority": priority,
+        "status": status,
+        "due_date": due,
+    }
 
 
 def _interview_task_exists(db: Session) -> bool:
@@ -158,38 +194,28 @@ def _execute_step(step: PlanStep, db: Session, dry_run: bool, approve: bool) -> 
     """Execute a single step using the concrete service functions.
     Returns an ExecutionResult describing success/failure.
     """
-    # Handle no‑op virtual steps (e.g., ordering proposal) – treat as success
-    if step.tool == "get_tasks" and step.name.startswith("Propose"):
-        return ExecutionResult(status="success", detail="Ordering computed locally")
-
     if step.requires_approval and not approve:
         return ExecutionResult(status="skipped", detail="Step requires explicit approval")
 
     if dry_run and step.tool in {"create_task", "update_task_status"}:
         return ExecutionResult(status="skipped", detail="Dry‑run mode – mutation not performed")
 
-    # Real tool execution
+    # Real tool execution. Ordering is read-only and must return the actual sequence.
     try:
-        if step.tool == "get_tasks":
-            tasks, total = task_service.list_tasks(
-                db=db,
-                status=None,
-                priority=None,
-                search=None,
-                limit=100,
-                offset=0,
+        if step.tool == "get_tasks" and step.name.startswith("Propose"):
+            ordered = [_serialize_task(task) for task in _sort_tasks(_retrieve_incomplete_tasks(db))]
+            return ExecutionResult(
+                status="success",
+                detail="Ordered unfinished tasks by priority, then earliest due date.",
+                output={"total": len(ordered), "tasks": ordered, "ordered": True},
             )
-            result = {"total": total, "tasks": [
-                {
-                    "id": t.id,
-                    "title": t.title,
-                    "priority": t.priority,
-                    "status": t.status,
-                    "due_date": t.due_date.isoformat() if t.due_date else None,
-                }
-                for t in tasks
-            ]}
-            return ExecutionResult(status="success", output=result)
+        if step.tool == "get_tasks":
+            tasks = [_serialize_task(task) for task in _retrieve_incomplete_tasks(db)]
+            return ExecutionResult(
+                status="success",
+                detail="Unfinished tasks only. Completed and cancelled work is excluded.",
+                output={"total": len(tasks), "tasks": tasks, "ordered": False},
+            )
         elif step.tool == "create_task":
             args = step.arguments
             # Guard against duplicate interview‑preparation tasks: if a task with the same title already exists, reuse it.
@@ -259,11 +285,16 @@ def run_orchestration(request: AgentRunRequest, db: Session) -> PlanResponse:
     for idx, step in enumerate(plan):
         result = _execute_step(step, db, request.dry_run, request.approve)
         step_results[idx] = result
+    any_failed = any(result.status == "failed" for result in step_results.values())
+    any_skipped = any(result.status == "skipped" for result in step_results.values())
     if request.dry_run:
         summary = "Preview completed – no state‑changing actions performed."
+    elif any_failed:
+        summary = "Orchestration completed with errors. Review step results."
+    elif any_skipped:
+        summary = "Orchestration finished. Steps that required approval were skipped."
     else:
-        any_failed = any(r.status == "failed" for r in step_results.values())
-        summary = "Orchestration completed with errors. Review step results." if any_failed else "Orchestration executed successfully."
+        summary = "Orchestration executed successfully."
     interpreted_intent = request.instruction.strip()
     return PlanResponse(
         request_id=request_id,
