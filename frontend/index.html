@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Axio Demo Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Axio <span class="tagline">Your intent. In action.</span></h1>
+    <div id="health" class="health unknown">Checking health…</div>
+  </header>
+  <main>
+    <section class="instruction-section">
+      <label for="instruction"><strong>Demo instruction:</strong></label>
+      <textarea id="instruction" rows="3">Organize my evening. Prioritize my unfinished tasks and leave time for interview preparation.</textarea>
+      <div class="buttons">
+        <button id="previewBtn">Preview plan</button>
+        <button id="executeBtn" disabled>Execute (approved)</button>
+      </div>
+    </section>
+    <section id="planSection" class="plan-section hidden">
+      <h2>Plan &amp; Results</h2>
+      <div id="loading" class="loading hidden">Loading…</div>
+      <div id="error" class="error hidden"></div>
+      <ul id="planList" class="plan-list"></ul>
+      <pre id="finalSummary" class="final-summary"></pre>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
