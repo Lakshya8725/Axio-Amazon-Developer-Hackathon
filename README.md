@@ -2,56 +2,30 @@
 
 > **"Your intent. In action."**
 
-Axio is a premium AI personal operator built for the **Amazon AppDev 2026 Hackathon** under the **Alexa+ AI Agents and Automation track**.
+Axio is an AI personal operator built for the **Amazon AppDev 2026 Hackathon** under the **Alexa+ AI Agents and Automation track**.
 
-Unlike typical chatbots that merely generate conversational text, Axio transforms natural-language requests into verifiable actions. It maintains persistent task state and user preferences in SQLite, exposes verified tools over the official **Model Context Protocol (MCP)** using modern Streamable HTTP transport, and enforces human-in-the-loop approvals before consequential changes.
+It turns one instruction into a plan you can inspect, then into a verified change. Persistent tasks and preferences live in SQLite. Tools are exposed over the official **Model Context Protocol (MCP)** using Streamable HTTP. Consequential writes wait for an explicit approval.
 
-The current agent is deterministic. It recognizes one demo instruction and does not call a live language model:
+The agent in this repository is deterministic. It recognizes one demo instruction and does not call a live language model:
 
 > Organize my evening. Prioritize my unfinished tasks and leave time for interview preparation.
 
 ---
 
-## Run the demo
+## Demo
 
-Axio runs as two local processes.
+1. Start the API and the operator (commands below).
+2. Open [http://127.0.0.1:3000](http://127.0.0.1:3000). The status pill should say **Operator live**.
+3. If the ledger is empty, choose **Load evening sample**. The sample does not insert the interview task.
+4. Leave the instruction as the evening line above and choose **Preview plan**. Nothing is written.
+5. If interview preparation is not already in the ledger, confirm the write and choose **Approve and execute**.
+6. Preview again. Axio reports that nothing needs a write and does not create a duplicate.
 
-**Backend** — from the repository root, with Python 3.11:
-
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
-```
-
-**Operator UI** — in a second terminal:
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Open the operator at [http://127.0.0.1:3000](http://127.0.0.1:3000).
-
-[http://127.0.0.1:8000](http://127.0.0.1:8000) is the API home. A browser shows the service page. An API client receives the same discovery data as JSON. Health stays at `/health`.
-
-Preview is read-only. The interview-preparation task is created only after you check the confirmation and choose **Approve and execute**. Running that approved plan again does not create a duplicate.
-
-If the task ledger is empty, choose **Load evening sample** in the UI, or from the repository root run:
-
-```bash
-python scripts/seed_demo.py
-```
-
-The sample does not insert the interview task. That remains an approved agent action.
-
-The UI calls `/axio-api`, and Next.js proxies that to `http://127.0.0.1:8000`. Override the proxy with `API_PROXY_TARGET`, or set `NEXT_PUBLIC_API_BASE_URL` if the browser should call FastAPI directly. `frontend/` is a minimal static fallback on the same API; serve it separately if you need it. The product UI is `web/`.
+[http://127.0.0.1:8000](http://127.0.0.1:8000) is the API home. A browser shows the service page. An API client receives the same discovery data as JSON.
 
 ---
 
-## Architecture Overview
+## Architecture
 
 ```
                                       +--------------------------+
@@ -61,12 +35,14 @@ The UI calls `/axio-api`, and Next.js proxies that to `http://127.0.0.1:8000`. O
                                           Streamable HTTP (/mcp)
                                                     v
 +--------------------------+          +--------------------------+
-|  Web UI / REST Clients   | -------> |    FastAPI Application   |
+|  Operator UI / REST      | -------> |    FastAPI Application   |
 +--------------------------+          +-------------+------------+
         (HTTP /api/*)                               |
                                                     v
                                       +--------------------------+
                                       |   Domain Service Layer   |
+                                      |   Tasks, preferences,    |
+                                      |   evening orchestration  |
                                       +-------------+------------+
                                                     |
                                                     v
@@ -75,92 +51,114 @@ The UI calls `/axio-api`, and Next.js proxies that to `http://127.0.0.1:8000`. O
                                       +--------------------------+
 ```
 
-- **Backend**: Python 3.10+ / 3.12+ with FastAPI.
-- **MCP Server**: Official Python MCP SDK (`mcp>=1.3.0`, v2.x architecture) implementing **Streamable HTTP** transport conforming to MCP specification `2025-11-25`.
-- **Persistence**: SQLite with SQLAlchemy ORM, foreign key enforcement, and automatic schema initialization.
-- **Validation**: Pydantic v2 schemas with strict validation against empty strings, invalid statuses, and invalid priorities.
-- **Testing**: Deterministic pytest test suite covering API contracts, persistence across database sessions, and live MCP protocol handshakes.
+- **Operator UI**: Next.js, React, TypeScript, and Tailwind CSS in `web/`.
+- **Backend**: Python 3.10+ with FastAPI. Local development uses Python 3.11.
+- **MCP server**: Official Python MCP SDK (`mcp>=1.3.0`, v2.x) implementing **Streamable HTTP**, MCP specification `2025-11-25`, mounted at `/mcp`.
+- **Persistence**: SQLite with SQLAlchemy, foreign-key enforcement, and automatic schema initialization.
+- **Validation**: Pydantic v2. Empty titles, unknown statuses, and unknown priorities are rejected.
+- **Orchestration**: `POST /api/agent/run` builds the evening plan in-process. Preview (`dry_run: true`) does not mutate tasks. A write requires `approve: true`.
+- **Testing**: pytest against a temporary SQLite database, including API contracts, MCP handshakes, approval gating, ordering, and duplicate prevention.
+
+`frontend/` is a small static fallback on the same API. The product surface is `web/`.
 
 ---
 
-## Repository Structure
+## Repository structure
 
 ```
-axio-ai-operator/
-├── .env.example              # Environment variables template
-├── .gitignore                # Git ignore patterns
-├── README.md                 # Project documentation
-├── API_CONTRACT.md           # REST and agent contract
-├── requirements.txt          # Root Python dependencies
-├── pytest.ini                # Makes `pytest` import the backend package
-├── web/                      # Next.js operator UI
-├── frontend/                 # Minimal static fallback
-├── scripts/                  # MCP verification and demo seed
+Axio-Amazon-Developer-Hackathon/
+├── .env.example
+├── .gitignore
+├── README.md
+├── API_CONTRACT.md
+├── requirements.txt
+├── pytest.ini
+├── web/                          # Next.js operator
+│   ├── src/app/
+│   ├── src/components/
+│   └── src/lib/                  # Typed API client
+├── frontend/                     # Static fallback
+├── scripts/
+│   ├── seed_demo.py
+│   ├── verify_mcp_client.py
+│   └── verify_milestone_l1.py
 └── backend/
-│   ├── .env.example          # Backend-specific environment template
-│   ├── requirements.txt      # Backend dependency manifest
-│   ├── app/
-│   │   ├── __init__.py       # Package marker
-│   │   ├── config.py         # Pydantic BaseSettings environment loader
-│   │   ├── database.py       # SQLAlchemy engine, sessionmaker, and init_db
-│   │   ├── main.py           # FastAPI application & dynamic MCP Starlette mount
-│   │   ├── models/           # SQLAlchemy ORM models
-│   │   │   ├── __init__.py
-│   │   │   ├── task.py       # Task model (status, priority, due date)
-│   │   │   └── preference.py # UserPreference model
-│   │   ├── schemas/          # Pydantic v2 schemas
-│   │   │   ├── __init__.py
-│   │   │   ├── task.py       # Task validation & response schemas
-│   │   │   ├── preference.py # Preference schemas
-│   │   │   └── orchestration.py # Agent plan request and response
-│   │   ├── services/         # Business logic layer
-│   │   │   ├── __init__.py
-│   │   │   ├── task_service.py
-│   │   │   ├── preference_service.py
-│   │   │   └── orchestration_service.py # Deterministic evening plan
-│   │   └── tools/            # MCP tool definitions & server
-│   │       ├── __init__.py
-│   │       └── mcp_server.py # Axio MCPServer with registered tools
-│   └── tests/                # Automated test suite
-│       ├── __init__.py
-│       ├── conftest.py       # Isolated SQLite test fixtures & TestClient
-│       ├── test_health.py    # Health check & service discovery tests
-│       ├── test_tasks.py     # Task CRUD, filters, validation, & persistence tests
-│       ├── test_mcp.py       # MCP registration, direct calls, & live HTTP tests
-│       └── test_orchestration.py # Plan preview, approval, ordering, duplicates
+    ├── app/
+    │   ├── main.py               # FastAPI app, service home, MCP mount
+    │   ├── config.py
+    │   ├── database.py
+    │   ├── models/
+    │   ├── schemas/              # Tasks, preferences, orchestration
+    │   ├── services/             # Tasks, preferences, evening plan
+    │   └── tools/mcp_server.py
+    └── tests/
+        ├── test_health.py
+        ├── test_tasks.py
+        ├── test_mcp.py
+        └── test_orchestration.py
 ```
 
 ---
 
-## Windows Setup & Installation
+## Setup
 
-### 1. Prerequisites
-- **Windows 10 / 11**
-- **Python 3.10+ or 3.12+**
-- **Git for Windows**
+### Prerequisites
 
-### 2. Clone and Setup Environment
+- Python 3.10 or newer (3.11 is what this demo uses)
+- Node.js 20 or newer
+- Git
 
-In PowerShell:
+### macOS or Linux
+
+From the repository root:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+cp .env.example .env
+```
+
+Start the API:
+
+```bash
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+In a second terminal, start the operator:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000).
+
+### Windows
+
+In PowerShell, from the repository root:
+
 ```powershell
-# Navigate to repository directory
-cd c:\Users\HP\OneDrive\Desktop\PROJECTS\AXIO-AMAZON-DEVELOPER
-
-# (Optional) Create and activate a virtual environment
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-
-# Install dependencies
 python -m pip install -r requirements.txt
-```
-
-### 3. Environment Configuration
-Copy `.env.example` to `.env`:
-```powershell
 Copy-Item .env.example .env
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
-Default settings:
+In a second terminal:
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+### Environment
+
+`.env.example` is the template. Defaults:
+
 ```ini
 AXIO_ENV=development
 AXIO_HOST=127.0.0.1
@@ -172,23 +170,29 @@ MCP_SERVER_VERSION=0.1.0
 MCP_MOUNT_PATH=/mcp
 ```
 
+The operator calls `/axio-api`, and Next.js proxies that to `http://127.0.0.1:8000`. Override the proxy with `API_PROXY_TARGET`. Set `NEXT_PUBLIC_API_BASE_URL` only if the browser should call FastAPI directly. Do not put secrets in `NEXT_PUBLIC_*` variables.
+
+Seed the evening tasks without creating the interview block:
+
+```bash
+python scripts/seed_demo.py
+```
+
 ---
 
-## Running the Application
+## Running
 
-### Option A: Unified Server (FastAPI + MCP Streamable HTTP)
-Starts the FastAPI application and mounts the official MCP server on `/mcp`:
-```powershell
-python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload
-```
-Once started:
-- **Interactive OpenAPI Docs**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- **Health Endpoint**: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
-- **MCP Streamable HTTP Endpoint**: `http://127.0.0.1:8000/mcp`
+| Surface | Address |
+|---|---|
+| Operator | [http://127.0.0.1:3000](http://127.0.0.1:3000) |
+| API home | [http://127.0.0.1:8000](http://127.0.0.1:8000) |
+| OpenAPI | [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) |
+| Health | [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) |
+| MCP Streamable HTTP | `http://127.0.0.1:8000/mcp` |
 
-### Option B: Standalone MCP Server
-To run the MCP server independently on a dedicated port:
-```powershell
+The MCP server is mounted inside the FastAPI process. A standalone entry point also exists:
+
+```bash
 python -m backend.app.tools.mcp_server
 ```
 
@@ -196,104 +200,65 @@ python -m backend.app.tools.mcp_server
 
 ## Testing
 
-Run the automated test suite with pytest:
-```powershell
-python -m pytest backend/tests -v
+From the repository root, with the virtual environment active:
+
+```bash
+python -m pytest -q
 ```
 
-The suite currently runs 31 tests in isolation against a clean temporary SQLite database, including orchestration, approval gating, duplicate prevention, and evening-order sorting. The original foundation coverage is:
-- `backend/tests/test_health.py`:
-  - `test_health_check` (PASS)
-- `backend/tests/test_mcp.py`:
-  - `test_mcp_tool_registration` (PASS)
-  - `test_mcp_tool_direct_invocation` (PASS)
-  - `test_mcp_tool_validation_and_error_handling` (PASS)
-  - `test_mcp_streamable_http_session_and_protocol` (PASS)
-- `backend/tests/test_tasks.py`:
-  - `test_create_task_minimal` (PASS)
-  - `test_create_task_full` (PASS)
-  - `test_create_task_validation_errors` (PASS)
-  - `test_get_task_by_id` (PASS)
-  - `test_get_task_not_found` (PASS)
-  - `test_patch_task_status` (PASS)
-  - `test_patch_task_invalid_status` (PASS)
-  - `test_patch_task_fields` (PASS)
-  - `test_list_tasks_and_filters` (PASS)
-  - `test_delete_task` (PASS)
-  - `test_database_persistence_across_sessions` (PASS)
-  - `test_user_preferences_api` (PASS)
+The suite runs in isolation on a temporary SQLite database. It covers health and the service index, task CRUD, preferences, MCP registration and a live Streamable HTTP handshake, plan preview, approval gating, evening ordering, and duplicate interview-task prevention. Current count: **31 tests**.
 
 ---
 
-## Verifying with a Real MCP Client
+## MCP client check
 
-With the server running on `http://127.0.0.1:8000`, run the verification script:
-```powershell
+With the API running:
+
+```bash
 python scripts/verify_mcp_client.py --url http://127.0.0.1:8000/mcp
 ```
 
-### Verified Output:
-```text
-[1/4] Connecting to Axio MCP server at: http://127.0.0.1:8000/mcp
-[2/4] Initializing protocol session...
-      Connected to server: axio (version: 0.1.0)
-[3/4] Discovering tools...
-      Discovered 4 tools:
-       - get_tasks: List existing tasks from Axio's persistent store with optional fi...
-       - create_task: Create a new persistent task in Axio. Requires a title. Optional ...
-       - update_task_status: Update the execution status of an existing task by ID. Allowed st...
-       - get_user_preferences: Retrieve configured user and operator preferences (such as confir...
-[4/4] Invoking 'create_task' via MCP Streamable HTTP...
-      Result: Task 'Verify MCP Streamable HTTP Client' created with ID 6.
-      Invoking 'get_tasks' filtered by task ID 6...
-      Found 1 matching tasks in persistence store.
-
- MCP Client Verification Passed Successfully!
-```
+The script initializes a session, lists four tools (`get_tasks`, `create_task`, `update_task_status`, `get_user_preferences`), creates a task, and reads it back. That script writes into the local `axio.db`. The pytest MCP tests can do the same when they use the process database. Delete those rows from the ledger if they show up behind **Show finished**.
 
 ---
 
-## API & MCP Reference
+## API
 
-### REST Endpoints
+Full request and response shapes are in [API_CONTRACT.md](API_CONTRACT.md).
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/` | Service home. HTML for browsers, JSON for API clients |
-| `GET` | `/health` | Service health status and metadata |
-| `GET` | `/api/tasks` | List tasks with filters (`status`, `priority`, `search`, `limit`, `offset`) |
-| `POST` | `/api/tasks` | Create a new action task |
-| `GET` | `/api/tasks/{task_id}` | Retrieve specific task details |
-| `PATCH` | `/api/tasks/{task_id}` | Update status, title, description, or priority |
-| `DELETE` | `/api/tasks/{task_id}` | Remove task from persistence |
-| `GET` | `/api/preferences` | Retrieve stored operator preferences |
-| `PUT` | `/api/preferences/{key}` | Set or update a preference key-value pair |
-| `POST` | `/api/agent/run` | Preview or execute the deterministic evening plan |
+| `GET` | `/` | Service home. HTML in a browser, JSON for API clients |
+| `GET` | `/health` | Status, version, environment, MCP path |
+| `GET` | `/api/tasks` | List tasks (`status`, `priority`, `search`, `limit`, `offset`) |
+| `POST` | `/api/tasks` | Create a task. New tasks start as `pending` |
+| `GET` | `/api/tasks/{task_id}` | One task |
+| `PATCH` | `/api/tasks/{task_id}` | Update title, description, priority, status, or due date |
+| `DELETE` | `/api/tasks/{task_id}` | Delete a task |
+| `GET` | `/api/preferences` | Operator preferences |
+| `PUT` | `/api/preferences/{key}` | Set a preference |
+| `POST` | `/api/agent/run` | Preview or execute the evening plan |
 
-### MCP Tools (Streamable HTTP `/mcp`)
+`POST /api/agent/run` accepts `instruction`, `dry_run` (default `false`), and `approve` (default `false`). Preview skips state-changing tools. A step that requires approval is skipped unless `approve` is true. The supported instruction is the evening line in the demo above.
 
-| Tool Name | Parameters | Description |
+### MCP tools
+
+| Tool | Parameters | Purpose |
 |---|---|---|
-| `get_tasks` | `status`, `priority`, `search`, `limit` | Query tasks from SQLite persistence |
-| `create_task` | `title`, `description`, `priority`, `due_date` | Register a new task with validation |
-| `update_task_status` | `task_id`, `status` | Transition task state (`pending`, `in_progress`, `completed`, `cancelled`) |
-| `get_user_preferences` | `category` | Retrieve operator preferences (e.g. security confirmation policy) |
+| `get_tasks` | `status`, `priority`, `search`, `limit` | Read tasks |
+| `create_task` | `title`, `description`, `priority`, `due_date` | Create a validated task |
+| `update_task_status` | `task_id`, `status` | `pending`, `in_progress`, `completed`, `cancelled` |
+| `get_user_preferences` | `category` | Read preferences, including the confirmation policy |
+
+Priorities are `low`, `medium`, `high`, and `urgent`. The evening order is priority, then earliest due date. Tasks without a due date come after dated tasks of the same priority. Completed and cancelled tasks stay out of that order.
 
 ---
 
-## Security & Reliability Design
+## Safety
 
-1. **Deterministic Arguments**: All MCP tools and REST endpoints validate input types and values against explicit enums and constraints before touching the database.
-2. **Safe Persistence**: SQLAlchemy ORM with parameterized queries prevents SQL injection. SQLite foreign keys are enforced via runtime PRAGMAs.
-3. **DNS Rebinding Protection**: Localhost MCP transport security limits allowed hosts and origins to `127.0.0.1`, `localhost`, and `[::1]`.
-4. **Isolated Test Database**: Automated tests run on ephemeral temporary SQLite files and clean up after execution.
-5. **Human Approval Safeguards**: Default seeded user preferences enforce `confirm_consequential_actions = true` for high-impact operator workflows.
-
----
-
-## Next Milestone: Phase 2
-
-- **Next.js 14+ / TypeScript / Tailwind CSS** operator dashboard.
-- Workflow execution planner with multi-step action breakdown.
-- Consequential action approval modal with verifiable audit trail.
-- Alexa+ Agent skill bridge integration.
+- Inputs are checked against explicit enums and constraints before they reach the database.
+- SQLAlchemy uses parameterized queries. SQLite foreign keys are enabled with a runtime PRAGMA.
+- MCP transport security allows `127.0.0.1`, `localhost`, and `[::1]`.
+- Tests use a temporary database and clean it up.
+- The seeded preference `confirm_consequential_actions` defaults to true. The operator still requires its own confirmation before it sends an approved run.
+- Preview does not create or edit tasks. The execute button sends the instruction that was previewed, not a later edit in the text box.
